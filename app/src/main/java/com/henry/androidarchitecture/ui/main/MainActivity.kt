@@ -1,4 +1,4 @@
-package com.henry.androidarchitecture
+package com.henry.androidarchitecture.ui.main
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
