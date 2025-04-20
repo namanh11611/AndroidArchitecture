@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Android Architecture</string>
+    <string name="add_note">New Note</string>
+    <string name="edit_note">Edit Note</string>
 </resources>
