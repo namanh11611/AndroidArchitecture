@@ -14,8 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +43,8 @@ import com.henry.androidarchitecture.data.repository.ResultState
 import com.henry.androidarchitecture.ui.list.components.NoteItem
 import com.henry.androidarchitecture.ui.list.components.NoteSearchBar
 import com.henry.androidarchitecture.ui.theme.AndroidArchitectureTheme
+import com.henry.androidarchitecture.ui.theme.BackgroundColorState
+import com.henry.androidarchitecture.ui.theme.LocalBackgroundColorState
 
 enum class SortOrder {
     TITLE_ASC,
@@ -66,6 +68,9 @@ fun NoteListScreen(
     var showSortMenu by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
+    
+    // Get background color state from composition local
+    val backgroundColorState = LocalBackgroundColorState.current
     
     // Get current screen width and orientation
     val configuration = LocalConfiguration.current
@@ -98,8 +103,11 @@ fun NoteListScreen(
                 TopAppBar(
                     title = { Text("Notes") },
                     actions = {
-                        IconButton(onClick = { isSearchActive = true }) {
-                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        IconButton(onClick = { 
+                            // Change background color when color button is clicked
+                            backgroundColorState.changeToRandomColor() 
+                        }) {
+                            Icon(Icons.Default.ColorLens, contentDescription = "Change Color")
                         }
                         
                         Box {
@@ -232,7 +240,12 @@ fun NoteListScreenPreview() {
         )
     )
     
-    AndroidArchitectureTheme {
+    // Create a background color state for the preview
+    val backgroundColorState = remember { BackgroundColorState() }
+    
+    AndroidArchitectureTheme(
+        backgroundColorState = backgroundColorState
+    ) {
         NoteListScreenPreviewContent(sampleNotes)
     }
 }
@@ -252,6 +265,9 @@ private fun NoteListScreenPreviewContent(notes: List<Note>) {
     
     // Determine if we should use grid layout (2 columns)
     val useGridLayout = screenWidth > 600.dp || isLandscape
+    
+    // Get background color state from composition local
+    val backgroundColorState = LocalBackgroundColorState.current
     
     // Filter notes by search query
     val filteredNotes = if (searchQuery.isBlank()) {
@@ -275,8 +291,11 @@ private fun NoteListScreenPreviewContent(notes: List<Note>) {
                 TopAppBar(
                     title = { Text("Notes") },
                     actions = {
-                        IconButton(onClick = { isSearchActive = true }) {
-                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        IconButton(onClick = { 
+                            // Change background color when color button is clicked
+                            backgroundColorState.changeToRandomColor() 
+                        }) {
+                            Icon(Icons.Default.ColorLens, contentDescription = "Change Color")
                         }
                         
                         Box {

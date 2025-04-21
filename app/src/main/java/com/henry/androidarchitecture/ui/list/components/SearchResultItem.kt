@@ -109,4 +109,4 @@ fun SearchResultItemPreview() {
             onClick = { }
         )
     }
-} 
+}

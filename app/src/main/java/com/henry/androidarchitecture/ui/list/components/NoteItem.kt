@@ -78,4 +78,4 @@ fun NoteItemPreview() {
             onNoteClick = { }
         )
     }
-} 
+}
