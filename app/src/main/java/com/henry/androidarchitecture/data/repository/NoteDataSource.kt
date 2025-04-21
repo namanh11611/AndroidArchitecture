@@ -13,6 +13,8 @@ interface NoteDataSource {
 
     suspend fun getNote(noteId: Int): ResultState<Note>
 
+    suspend fun searchNotes(query: String): ResultState<List<Note>>
+
     suspend fun saveNote(note: Note)
 
     suspend fun deleteAllNotes()

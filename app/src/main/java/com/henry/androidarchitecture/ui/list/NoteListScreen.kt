@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -15,7 +16,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ColorLens
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,6 +27,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +70,14 @@ fun NoteListScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     
+    // Collect pagination states
+    val isLoading = viewModel.isLoading.collectAsState()
+    val hasMoreData = viewModel.hasMoreData.collectAsState()
+    
+    // Collect search results
+    val searchResultsState = viewModel.searchResults.collectAsState()
+    val currentSearchQuery = viewModel.currentSearchQuery.collectAsState()
+    
     // Get background color state from composition local
     val backgroundColorState = LocalBackgroundColorState.current
     
@@ -80,13 +89,19 @@ fun NoteListScreen(
     // Determine if we should use grid layout (2 columns)
     val useGridLayout = screenWidth > 600.dp || isLandscape
     
-    // Filter notes by search query
+    // Use database search results when search is active, otherwise use all notes
     val filteredNotes = if (searchQuery.isBlank()) {
         notes
+    } else if (searchResultsState.value is ResultState.Success) {
+        (searchResultsState.value as ResultState.Success<List<Note>>).data
     } else {
-        notes.filter { note ->
-            note.title?.contains(searchQuery, ignoreCase = true) == true ||
-            note.content?.contains(searchQuery, ignoreCase = true) == true
+        emptyList()
+    }
+    
+    // Effect to trigger search when query changes
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isNotBlank()) {
+            viewModel.searchNotes(searchQuery)
         }
     }
     
@@ -195,6 +210,27 @@ fun NoteListScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
+                    
+                    // Add loading indicator at the bottom if more data is being loaded
+                    if (hasMoreData.value || isLoading.value) {
+                        item(span = { GridItemSpan(2) }) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isLoading.value) {
+                                    androidx.compose.material3.CircularProgressIndicator()
+                                } else {
+                                    // Load more when this item becomes visible
+                                    LaunchedEffect(key1 = true) {
+                                        viewModel.loadMoreNotes()
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             } else {
                 // Single column for portrait phone
@@ -208,6 +244,27 @@ fun NoteListScreen(
                             note = note,
                             onNoteClick = { onNoteClick(note.id) }
                         )
+                    }
+                    
+                    // Add loading indicator at the bottom if more data is being loaded
+                    if (hasMoreData.value || isLoading.value) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (isLoading.value) {
+                                    androidx.compose.material3.CircularProgressIndicator()
+                                } else {
+                                    // Load more when this item becomes visible
+                                    LaunchedEffect(key1 = true) {
+                                        viewModel.loadMoreNotes()
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -40,6 +40,16 @@ class NoteLocalDataSource @Inject constructor(
             ResultState.Error(exception.message)
         }
     }
+    
+    override suspend fun searchNotes(query: String): ResultState<List<Note>> = withContext(dispatcherIO) {
+        try {
+            // Add wildcard characters to enable partial matching
+            val searchQuery = "%$query%"
+            ResultState.Success(noteDao.searchNotes(searchQuery))
+        } catch (exception: Exception) {
+            ResultState.Error(exception.message)
+        }
+    }
 
     override suspend fun saveNote(note: Note) {
         noteDao.insert(note)

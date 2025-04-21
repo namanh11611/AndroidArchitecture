@@ -44,6 +44,10 @@ class NoteRepositoryImpl @Inject constructor(
         }
         return noteLocalDataSource.getNote(noteId)
     }
+    
+    override suspend fun searchNotes(query: String): ResultState<List<Note>> {
+        return noteLocalDataSource.searchNotes(query)
+    }
 
     override suspend fun saveNote(note: Note) {
         noteLocalDataSource.saveNote(note)

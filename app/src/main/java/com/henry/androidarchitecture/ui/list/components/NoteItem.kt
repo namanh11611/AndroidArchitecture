@@ -27,7 +27,7 @@ fun NoteItem(
 ) {
     Card(
         modifier = modifier
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
             .clickable(onClick = onNoteClick)
     ) {
         Column(

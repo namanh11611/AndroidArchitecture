@@ -27,6 +27,10 @@ class NoteRemoteDataSource @Inject constructor(
         TODO("Not yet implemented")
     }
 
+    override suspend fun searchNotes(query: String): ResultState<List<Note>> {
+        TODO("Not yet implemented")
+    }
+
     override suspend fun saveNote(note: Note) {
         TODO("Not yet implemented")
     }

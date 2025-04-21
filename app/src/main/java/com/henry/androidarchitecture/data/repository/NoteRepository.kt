@@ -15,6 +15,8 @@ interface NoteRepository {
     fun getNoteStream(noteId: Int): Flow<ResultState<Note>>
 
     suspend fun getNote(noteId: Int, forceUpdate: Boolean = false): ResultState<Note>
+    
+    suspend fun searchNotes(query: String): ResultState<List<Note>>
 
     suspend fun saveNote(note: Note)
 
