@@ -20,13 +20,11 @@ import com.henry.androidarchitecture.navigation.NoteDestinationsArgs.USER_MESSAG
 import com.henry.androidarchitecture.ui.detail.NoteDetailScreen
 import com.henry.androidarchitecture.ui.editor.NoteEditorScreen
 import com.henry.androidarchitecture.ui.list.NoteListScreen
-import kotlinx.coroutines.CoroutineScope
 
 @Composable
 fun NoteNavGraph(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController(),
-    coroutineScope: CoroutineScope = rememberCoroutineScope(),
     startDestination: String = NoteDestinations.NOTE_LIST_ROUTE,
     navActions: NoteNavigationActions = remember(navController) {
         NoteNavigationActions(navController)

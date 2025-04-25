@@ -1,15 +1,12 @@
 package com.henry.androidarchitecture.ui.editor
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -18,24 +15,17 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.FormatBold
-import androidx.compose.material.icons.filled.FormatItalic
-import androidx.compose.material.icons.filled.FormatListBulleted
-import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -53,12 +43,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.henry.androidarchitecture.data.model.Note
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.henry.androidarchitecture.ui.theme.AndroidArchitectureTheme
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,36 +59,43 @@ fun NoteEditorScreen(
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
     
-    var title by remember { mutableStateOf("") }
-    var content by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(noteId > 0) }
-    var showDiscardDialog by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var formatBold by remember { mutableStateOf(false) }
-    var formatItalic by remember { mutableStateOf(false) }
-    var formatBulletList by remember { mutableStateOf(false) }
-    var formatNumberedList by remember { mutableStateOf(false) }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     
     // Load note if editing existing note
     LaunchedEffect(key1 = noteId) {
         if (noteId > 0) {
-            isLoading = true
-            viewModel.loadNote(noteId) { note ->
-                title = note.title ?: ""
-                content = note.content ?: ""
-                isLoading = false
+            viewModel.loadNote(noteId)
+        }
+    }
+    
+    // Handle saved state
+    LaunchedEffect(key1 = uiState.isSaved) {
+        if (uiState.isSaved) {
+            scope.launch {
+                snackbarHostState.showSnackbar("Note saved")
             }
+            onNoteSaved()
+        }
+    }
+    
+    // Handle errors
+    LaunchedEffect(key1 = uiState.error) {
+        uiState.error?.let { error ->
+            scope.launch {
+                snackbarHostState.showSnackbar(error)
+            }
+            viewModel.clearError()
         }
     }
     
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (noteId > 0) "Edit Note" else "New Note") },
+                title = { Text(if (uiState.isExistingNote) "Edit Note" else "New Note") },
                 navigationIcon = {
                     IconButton(onClick = { 
-                        if (title.isNotEmpty() || content.isNotEmpty()) {
-                            showDiscardDialog = true
+                        if (uiState.hasUnsavedChanges) {
+                            viewModel.showDiscardDialog(true)
                         } else {
                             onBackClick()
                         }
@@ -110,12 +104,12 @@ fun NoteEditorScreen(
                     }
                 },
                 actions = {
-                    if (noteId > 0) {
-                        IconButton(onClick = { showDeleteDialog = true }) {
+                    if (uiState.isExistingNote) {
+                        IconButton(onClick = { viewModel.showDeleteDialog(true) }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete Note")
                         }
                     }
-                    IconButton(onClick = { saveNote(noteId, title, content, viewModel, scope, snackbarHostState, onNoteSaved) }) {
+                    IconButton(onClick = { viewModel.saveNote() }) {
                         Icon(Icons.Default.Save, contentDescription = "Save Note")
                     }
                 }
@@ -123,7 +117,7 @@ fun NoteEditorScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
-        if (isLoading) {
+        if (uiState.isLoading) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -141,8 +135,8 @@ fun NoteEditorScreen(
                     .verticalScroll(scrollState)
             ) {
                 OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
+                    value = uiState.title,
+                    onValueChange = { viewModel.updateTitle(it) },
                     label = { Text("Title") },
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(
@@ -153,76 +147,11 @@ fun NoteEditorScreen(
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                // Formatting toolbar
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shadowElevation = 1.dp
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = { formatBold = !formatBold },
-                            modifier = Modifier.background(
-                                if (formatBold) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                            )
-                        ) {
-                            Icon(Icons.Default.FormatBold, contentDescription = "Bold")
-                        }
-                        
-                        Spacer(modifier = Modifier.width(4.dp))
-                        
-                        IconButton(
-                            onClick = { formatItalic = !formatItalic },
-                            modifier = Modifier.background(
-                                if (formatItalic) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                            )
-                        ) {
-                            Icon(Icons.Default.FormatItalic, contentDescription = "Italic")
-                        }
-                        
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Divider(modifier = Modifier
-                            .height(24.dp)
-                            .width(1.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        
-                        IconButton(
-                            onClick = { 
-                                formatBulletList = !formatBulletList
-                                if (formatBulletList) formatNumberedList = false
-                            },
-                            modifier = Modifier.background(
-                                if (formatBulletList) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                            )
-                        ) {
-                            Icon(Icons.Default.FormatListBulleted, contentDescription = "Bullet List")
-                        }
-                        
-                        Spacer(modifier = Modifier.width(4.dp))
-                        
-                        IconButton(
-                            onClick = { 
-                                formatNumberedList = !formatNumberedList
-                                if (formatNumberedList) formatBulletList = false
-                            },
-                            modifier = Modifier.background(
-                                if (formatNumberedList) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-                            )
-                        ) {
-                            Icon(Icons.Default.FormatListNumbered, contentDescription = "Numbered List")
-                        }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
                 OutlinedTextField(
-                    value = content,
-                    onValueChange = { content = it },
+                    value = uiState.content,
+                    onValueChange = { 
+                        viewModel.updateContent(it)
+                    },
                     label = { Text("Content") },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -238,21 +167,21 @@ fun NoteEditorScreen(
     }
     
     // Discard changes dialog
-    if (showDiscardDialog) {
+    if (uiState.showDiscardDialog) {
         AlertDialog(
-            onDismissRequest = { showDiscardDialog = false },
+            onDismissRequest = { viewModel.showDiscardDialog(false) },
             title = { Text("Discard changes?") },
             text = { Text("You have unsaved changes. Are you sure you want to discard them?") },
             confirmButton = {
                 TextButton(onClick = {
-                    showDiscardDialog = false
+                    viewModel.showDiscardDialog(false)
                     onBackClick()
                 }) {
                     Text("Discard")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDiscardDialog = false }) {
+                TextButton(onClick = { viewModel.showDiscardDialog(false) }) {
                     Text("Keep editing")
                 }
             }
@@ -260,61 +189,27 @@ fun NoteEditorScreen(
     }
     
     // Delete note dialog
-    if (showDeleteDialog) {
+    if (uiState.showDeleteDialog) {
         AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
+            onDismissRequest = { viewModel.showDeleteDialog(false) },
             title = { Text("Delete note?") },
             text = { Text("This action cannot be undone.") },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.deleteNote(noteId)
-                    scope.launch {
-                        snackbarHostState.showSnackbar("Note deleted")
-                    }
-                    showDeleteDialog = false
+                    viewModel.deleteNote()
+                    viewModel.showDeleteDialog(false)
                     onBackClick()
                 }) {
                     Text("Delete")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
+                TextButton(onClick = { viewModel.showDeleteDialog(false) }) {
                     Text("Cancel")
                 }
             }
         )
     }
-}
-
-private fun saveNote(
-    noteId: Int,
-    title: String,
-    content: String,
-    viewModel: NoteEditorViewModel,
-    scope: kotlinx.coroutines.CoroutineScope,
-    snackbarHostState: SnackbarHostState,
-    onNoteSaved: () -> Unit
-) {
-    if (title.isBlank()) {
-        scope.launch {
-            snackbarHostState.showSnackbar("Please enter a title")
-        }
-        return
-    }
-    
-    val formattedDate = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-    val note = Note(
-        id = noteId,
-        title = title,
-        content = content,
-        dateStamp = formattedDate
-    )
-    
-    viewModel.saveNote(note)
-    scope.launch {
-        snackbarHostState.showSnackbar("Note saved")
-    }
-    onNoteSaved()
 }
 
 @Preview(showBackground = true)
@@ -369,47 +264,6 @@ private fun NoteEditorPreviewContent() {
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Formatting toolbar
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shadowElevation = 1.dp
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { }) {
-                        Icon(Icons.Default.FormatBold, contentDescription = "Bold")
-                    }
-                    
-                    Spacer(modifier = Modifier.width(4.dp))
-                    
-                    IconButton(onClick = { }) {
-                        Icon(Icons.Default.FormatItalic, contentDescription = "Italic")
-                    }
-                    
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Divider(modifier = Modifier
-                        .height(24.dp)
-                        .width(1.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    
-                    IconButton(onClick = { }) {
-                        Icon(Icons.Default.FormatListBulleted, contentDescription = "Bullet List")
-                    }
-                    
-                    Spacer(modifier = Modifier.width(4.dp))
-                    
-                    IconButton(onClick = { }) {
-                        Icon(Icons.Default.FormatListNumbered, contentDescription = "Numbered List")
-                    }
-                }
-            }
             
             Spacer(modifier = Modifier.height(8.dp))
             

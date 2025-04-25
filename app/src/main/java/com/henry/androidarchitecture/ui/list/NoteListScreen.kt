@@ -28,7 +28,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,13 +38,14 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.henry.androidarchitecture.data.model.Note
-import com.henry.androidarchitecture.data.repository.ResultState
 import com.henry.androidarchitecture.ui.list.components.NoteItem
 import com.henry.androidarchitecture.ui.list.components.NoteSearchBar
 import com.henry.androidarchitecture.ui.theme.AndroidArchitectureTheme
 import com.henry.androidarchitecture.ui.theme.BackgroundColorState
 import com.henry.androidarchitecture.ui.theme.LocalBackgroundColorState
+import com.henry.androidarchitecture.util.AppUtils
 
 enum class SortOrder {
     TITLE_ASC,
@@ -60,56 +60,38 @@ fun NoteListScreen(
     onNoteClick: (Int) -> Unit,
     onAddNoteClick: () -> Unit
 ) {
-    val notesState = viewModel.notes.collectAsState(initial = ResultState.Loading)
-    var notes = emptyList<Note>()
-    if (notesState.value is ResultState.Success) {
-        notes = (notesState.value as ResultState.Success<List<Note>>).data
-    }
-    var sortOrder by remember { mutableStateOf(SortOrder.DATE_DESC) }
-    var showSortMenu by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
-    var isSearchActive by remember { mutableStateOf(false) }
-    
-    // Collect pagination states
-    val isLoading = viewModel.isLoading.collectAsState()
-    val hasMoreData = viewModel.hasMoreData.collectAsState()
-    
-    // Collect search results
-    val searchResultsState = viewModel.searchResults.collectAsState()
-    val currentSearchQuery = viewModel.currentSearchQuery.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     
     // Get background color state from composition local
     val backgroundColorState = LocalBackgroundColorState.current
     
-    // Get current screen width and orientation
-    val configuration = LocalConfiguration.current
-    val screenWidth = configuration.screenWidthDp.dp
-    val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
+    // Determine if we should use grid layout using AppUtils
+    val useGridLayout = AppUtils.shouldUseGridLayout(LocalConfiguration.current)
     
-    // Determine if we should use grid layout (2 columns)
-    val useGridLayout = screenWidth > 600.dp || isLandscape
+    // Update grid layout preference in ViewModel
+    LaunchedEffect(useGridLayout) {
+        viewModel.setGridLayout(useGridLayout)
+    }
     
     // Use database search results when search is active, otherwise use all notes
-    val filteredNotes = if (searchQuery.isBlank()) {
-        notes
-    } else if (searchResultsState.value is ResultState.Success) {
-        (searchResultsState.value as ResultState.Success<List<Note>>).data
+    val displayNotes = if (uiState.searchQuery.isBlank()) {
+        uiState.notes
     } else {
-        emptyList()
+        uiState.filteredNotes
     }
     
     // Effect to trigger search when query changes
-    LaunchedEffect(searchQuery) {
-        if (searchQuery.isNotBlank()) {
-            viewModel.searchNotes(searchQuery)
+    LaunchedEffect(uiState.searchQuery) {
+        if (uiState.searchQuery.isNotBlank()) {
+            viewModel.searchNotes(uiState.searchQuery)
         }
     }
     
     // Sort filtered notes
-    val sortedNotes = when (sortOrder) {
-        SortOrder.TITLE_ASC -> filteredNotes.sortedBy { it.title }
-        SortOrder.DATE_ASC -> filteredNotes.sortedBy { it.dateStamp }
-        SortOrder.DATE_DESC -> filteredNotes.sortedByDescending { it.dateStamp }
+    val sortedNotes = when (uiState.sortOrder) {
+        SortOrder.TITLE_ASC -> displayNotes.sortedBy { it.title }
+        SortOrder.DATE_ASC -> displayNotes.sortedBy { it.dateStamp }
+        SortOrder.DATE_DESC -> displayNotes.sortedByDescending { it.dateStamp }
     }
 
     Scaffold(
@@ -126,34 +108,25 @@ fun NoteListScreen(
                         }
                         
                         Box {
-                            IconButton(onClick = { showSortMenu = !showSortMenu }) {
+                            IconButton(onClick = { viewModel.toggleSortMenu() }) {
                                 Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort")
                             }
                             
                             DropdownMenu(
-                                expanded = showSortMenu,
-                                onDismissRequest = { showSortMenu = false }
+                                expanded = uiState.showSortMenu,
+                                onDismissRequest = { viewModel.toggleSortMenu() }
                             ) {
                                 DropdownMenuItem(
                                     text = { Text("Sort by Title") },
-                                    onClick = { 
-                                        sortOrder = SortOrder.TITLE_ASC
-                                        showSortMenu = false
-                                    }
+                                    onClick = { viewModel.setSortOrder(SortOrder.TITLE_ASC) }
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Sort by Date (Newest)") },
-                                    onClick = { 
-                                        sortOrder = SortOrder.DATE_DESC
-                                        showSortMenu = false
-                                    }
+                                    onClick = { viewModel.setSortOrder(SortOrder.DATE_DESC) }
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Sort by Date (Oldest)") },
-                                    onClick = { 
-                                        sortOrder = SortOrder.DATE_ASC
-                                        showSortMenu = false
-                                    }
+                                    onClick = { viewModel.setSortOrder(SortOrder.DATE_ASC) }
                                 )
                             }
                         }
@@ -161,11 +134,11 @@ fun NoteListScreen(
                 )
                 
                 NoteSearchBar(
-                    searchQuery = searchQuery,
-                    onQueryChange = { searchQuery = it },
-                    isSearchActive = isSearchActive,
-                    onActiveChange = { isSearchActive = it },
-                    filteredNotes = filteredNotes,
+                    searchQuery = uiState.searchQuery,
+                    onQueryChange = { viewModel.setSearchQuery(it) },
+                    isSearchActive = uiState.isSearchActive,
+                    onActiveChange = { viewModel.setSearchActive(it) },
+                    filteredNotes = displayNotes,
                     onNoteClick = onNoteClick
                 )
             }
@@ -184,10 +157,10 @@ fun NoteListScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (searchQuery.isBlank()) 
+                    text = if (uiState.searchQuery.isBlank()) 
                         "No notes yet. Click the + button to add a note."
                     else 
-                        "No matching results for \"$searchQuery\"",
+                        "No matching results for \"${uiState.searchQuery}\"",
                     style = MaterialTheme.typography.bodyLarge
                 )
             }
@@ -212,7 +185,7 @@ fun NoteListScreen(
                     }
                     
                     // Add loading indicator at the bottom if more data is being loaded
-                    if (hasMoreData.value || isLoading.value) {
+                    if (uiState.hasMoreData || uiState.isLoading) {
                         item(span = { GridItemSpan(2) }) {
                             Box(
                                 modifier = Modifier
@@ -220,7 +193,7 @@ fun NoteListScreen(
                                     .padding(16.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (isLoading.value) {
+                                if (uiState.isLoading) {
                                     androidx.compose.material3.CircularProgressIndicator()
                                 } else {
                                     // Load more when this item becomes visible
@@ -247,7 +220,7 @@ fun NoteListScreen(
                     }
                     
                     // Add loading indicator at the bottom if more data is being loaded
-                    if (hasMoreData.value || isLoading.value) {
+                    if (uiState.hasMoreData || uiState.isLoading) {
                         item {
                             Box(
                                 modifier = Modifier
@@ -255,7 +228,7 @@ fun NoteListScreen(
                                     .padding(16.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (isLoading.value) {
+                                if (uiState.isLoading) {
                                     androidx.compose.material3.CircularProgressIndicator()
                                 } else {
                                     // Load more when this item becomes visible
@@ -315,13 +288,8 @@ private fun NoteListScreenPreviewContent(notes: List<Note>) {
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     
-    // Get current screen width and orientation for preview
-    val configuration = LocalConfiguration.current
-    val screenWidth = configuration.screenWidthDp.dp
-    val isLandscape = configuration.screenWidthDp > configuration.screenHeightDp
-    
-    // Determine if we should use grid layout (2 columns)
-    val useGridLayout = screenWidth > 600.dp || isLandscape
+    // Determine if we should use grid layout using AppUtils
+    val useGridLayout = AppUtils.shouldUseGridLayout(LocalConfiguration.current)
     
     // Get background color state from composition local
     val backgroundColorState = LocalBackgroundColorState.current

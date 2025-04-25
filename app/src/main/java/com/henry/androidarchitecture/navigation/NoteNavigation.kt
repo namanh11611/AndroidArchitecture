@@ -1,5 +1,6 @@
 package com.henry.androidarchitecture.navigation
 
+import android.util.Log
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import com.henry.androidarchitecture.navigation.NoteDestinationsArgs.NOTE_ID_ARG
@@ -8,6 +9,7 @@ import com.henry.androidarchitecture.navigation.NoteDestinationsArgs.USER_MESSAG
 import com.henry.androidarchitecture.navigation.NoteScreens.NOTE_EDITOR_SCREEN
 import com.henry.androidarchitecture.navigation.NoteScreens.NOTE_DETAIL_SCREEN
 import com.henry.androidarchitecture.navigation.NoteScreens.NOTE_LIST_SCREEN
+import timber.log.Timber
 
 private object NoteScreens {
     const val NOTE_LIST_SCREEN = "noteList"
@@ -30,6 +32,10 @@ object NoteDestinations {
 class NoteNavigationActions(private val navController: NavHostController) {
 
     fun navigateToNoteList(userMessage: Int = 0) {
+        val route = NOTE_LIST_SCREEN.let {
+            if (userMessage != 0) "$it?$USER_MESSAGE_ARG=$userMessage" else it
+        }
+        Timber.d("navigateToNoteList: $route")
         val navigatesFromDrawer = userMessage == 0
         navController.navigate(
             NOTE_LIST_SCREEN.let {
@@ -46,14 +52,15 @@ class NoteNavigationActions(private val navController: NavHostController) {
     }
 
     fun navigateToNoteDetail(noteId: Int) {
+        Timber.d("navigateToNoteDetail: $NOTE_DETAIL_SCREEN/$noteId")
         navController.navigate("$NOTE_DETAIL_SCREEN/$noteId")
     }
 
     fun navigateToNoteEditor(title: Int, noteId: Int?) {
-        navController.navigate(
-            "$NOTE_EDITOR_SCREEN/$title".let {
-                if (noteId != null) "$it?$NOTE_ID_ARG=$noteId" else it
-            }
-        )
+        val route = "$NOTE_EDITOR_SCREEN/$title".let {
+            if (noteId != null) "$it?$NOTE_ID_ARG=$noteId" else it
+        }
+        Timber.d("navigateToNoteEditor: $route")
+        navController.navigate(route)
     }
 }

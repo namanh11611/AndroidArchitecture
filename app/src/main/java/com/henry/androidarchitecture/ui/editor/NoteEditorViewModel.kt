@@ -6,10 +6,13 @@ import com.henry.androidarchitecture.data.model.Note
 import com.henry.androidarchitecture.data.repository.NoteRepository
 import com.henry.androidarchitecture.data.repository.ResultState
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 
 @HiltViewModel
@@ -17,85 +20,135 @@ class NoteEditorViewModel @Inject constructor(
     private val noteRepository: NoteRepository
 ) : ViewModel() {
 
-    private val _saveNoteState = MutableStateFlow<ResultState<Unit>>(ResultState.Success(Unit))
-    val saveNoteState: StateFlow<ResultState<Unit>> = _saveNoteState
+    // UI State
+    private val _uiState = MutableStateFlow(NoteEditorUiState())
+    val uiState = _uiState.asStateFlow()
 
-    fun loadNote(noteId: Int, onLoaded: (Note) -> Unit) {
+    fun loadNote(noteId: Int) {
+        if (noteId <= 0) return
+        
+        _uiState.update { it.copy(isLoading = true, noteId = noteId) }
+        
         viewModelScope.launch {
             when (val result = noteRepository.getNote(noteId)) {
-                is ResultState.Success -> onLoaded(result.data)
+                is ResultState.Success -> {
+                    _uiState.update { 
+                        NoteEditorUiState.fromNote(result.data).copy(isLoading = false) 
+                    }
+                }
                 is ResultState.Error -> {
-                    // Handle error, could show a message
+                    _uiState.update { 
+                        it.copy(error = result.message, isLoading = false) 
+                    }
                 }
                 else -> {
-                    // Handle loading or empty state
+                    // Handle loading state (already set above)
                 }
             }
         }
     }
 
-    fun saveNote(note: Note) {
+    fun saveNote() {
+        val currentState = _uiState.value
+        
+        if (!currentState.isTitleValid) {
+            _uiState.update { it.copy(error = "Please enter a title") }
+            return
+        }
+        
+        val formattedDate = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        
+        val note = Note(
+            id = currentState.noteId,
+            title = currentState.title,
+            content = currentState.content,
+            dateStamp = formattedDate
+        )
+        
+        _uiState.update { it.copy(isLoading = true) }
+        
         viewModelScope.launch {
             try {
                 noteRepository.saveNote(note)
-                _saveNoteState.value = ResultState.Success(Unit)
+                _uiState.update { 
+                    it.copy(isSaved = true, isLoading = false, dateStamp = formattedDate) 
+                }
             } catch (e: Exception) {
-                _saveNoteState.value = ResultState.Error(e.message)
+                _uiState.update { 
+                    it.copy(error = e.message, isLoading = false) 
+                }
             }
         }
     }
 
-    fun deleteNote(noteId: Int) {
+    fun deleteNote() {
+        val noteId = _uiState.value.noteId
+        if (noteId <= 0) return
+        
+        _uiState.update { it.copy(isLoading = true) }
+        
         viewModelScope.launch {
             try {
                 noteRepository.deleteNote(noteId)
+                _uiState.update { 
+                    it.copy(isLoading = false, isSaved = true) 
+                }
             } catch (e: Exception) {
-                // Handle error
+                _uiState.update { 
+                    it.copy(error = e.message, isLoading = false) 
+                }
             }
         }
     }
 
-    // Helper function to insert text format at cursor position
-    fun applyFormat(currentText: String, format: NoteFormat, cursorPosition: Int): String {
-        return when (format) {
-            NoteFormat.BOLD -> insertMarkdown(currentText, "**", "**", cursorPosition)
-            NoteFormat.ITALIC -> insertMarkdown(currentText, "*", "*", cursorPosition)
-            NoteFormat.BULLET_LIST -> {
-                val lines = currentText.split("\n")
-                lines.mapIndexed { index, line ->
-                    if (index == 0 || cursorPosition <= currentText.indexOf(line)) {
-                        "- $line"
-                    } else {
-                        line
-                    }
-                }.joinToString("\n")
-            }
-            NoteFormat.NUMBERED_LIST -> {
-                val lines = currentText.split("\n")
-                lines.mapIndexed { index, line ->
-                    if (index == 0 || cursorPosition <= currentText.indexOf(line)) {
-                        "${index + 1}. $line"
-                    } else {
-                        line
-                    }
-                }.joinToString("\n")
-            }
+    // Update UI state functions
+    fun updateTitle(title: String) {
+        _uiState.update { it.copy(title = title) }
+    }
+    
+    fun updateContent(content: String) {
+        _uiState.update { it.copy(content = content) }
+    }
+    
+    fun updateCursorPosition(position: Int) {
+        _uiState.update { it.copy(cursorPosition = position) }
+    }
+    
+    fun toggleFormatBold() {
+        _uiState.update { it.copy(formatBold = !it.formatBold) }
+    }
+    
+    fun toggleFormatItalic() {
+        _uiState.update { it.copy(formatItalic = !it.formatItalic) }
+    }
+    
+    fun toggleFormatBulletList() {
+        _uiState.update { 
+            it.copy(
+                formatBulletList = !it.formatBulletList,
+                formatNumberedList = if (!it.formatBulletList) false else it.formatNumberedList
+            ) 
         }
     }
-
-    private fun insertMarkdown(text: String, prefix: String, suffix: String, cursorPosition: Int): String {
-        if (text.isEmpty()) return "$prefix$suffix"
-        
-        val beforeCursor = text.substring(0, cursorPosition)
-        val afterCursor = text.substring(cursorPosition)
-        
-        return "$beforeCursor$prefix$suffix$afterCursor"
+    
+    fun toggleFormatNumberedList() {
+        _uiState.update { 
+            it.copy(
+                formatNumberedList = !it.formatNumberedList,
+                formatBulletList = if (!it.formatNumberedList) false else it.formatBulletList
+            ) 
+        }
     }
-}
-
-enum class NoteFormat {
-    BOLD,
-    ITALIC,
-    BULLET_LIST,
-    NUMBERED_LIST
+    
+    fun showDiscardDialog(show: Boolean) {
+        _uiState.update { it.copy(showDiscardDialog = show) }
+    }
+    
+    fun showDeleteDialog(show: Boolean) {
+        _uiState.update { it.copy(showDeleteDialog = show) }
+    }
+    
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
+    }
 }

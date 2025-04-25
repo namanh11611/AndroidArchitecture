@@ -29,7 +29,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,8 +40,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.henry.androidarchitecture.data.model.Note
-import com.henry.androidarchitecture.data.repository.ResultState
 import com.henry.androidarchitecture.ui.theme.AndroidArchitectureTheme
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -58,79 +57,58 @@ fun NoteDetailScreen(
     onNoteSaved: () -> Unit,
     onNoteDeleted: () -> Unit
 ) {
-    val noteState = viewModel.noteStream.collectAsState(initial = ResultState.Loading)
-    val saveNoteState = viewModel.saveNoteState.collectAsState()
-    val deleteNoteState = viewModel.deleteNoteState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    
-    var title by remember { mutableStateOf("") }
-    var content by remember { mutableStateOf("") }
-    var showDeleteConfirmation by remember { mutableStateOf(false) }
     
     // Load note details
     LaunchedEffect(key1 = noteId) {
         viewModel.loadNote(noteId)
     }
     
-    // Update UI with note data when loaded
-    LaunchedEffect(key1 = noteState.value) {
-        if (noteState.value is ResultState.Success) {
-            val note = (noteState.value as ResultState.Success<Note>).data
-            title = note.title ?: ""
-            content = note.content ?: ""
+    // Handle saved state
+    LaunchedEffect(key1 = uiState.isSaved) {
+        if (uiState.isSaved) {
+            scope.launch {
+                snackbarHostState.showSnackbar("Note saved successfully")
+            }
+            onNoteSaved()
         }
     }
     
-    // Handle save result
-    LaunchedEffect(key1 = saveNoteState.value) {
-        when (saveNoteState.value) {
-            is ResultState.Success -> {
-                scope.launch {
-                    snackbarHostState.showSnackbar("Note saved successfully")
-                }
-                onNoteSaved()
+    // Handle deleted state
+    LaunchedEffect(key1 = uiState.isDeleted) {
+        if (uiState.isDeleted) {
+            scope.launch {
+                snackbarHostState.showSnackbar("Note deleted successfully")
             }
-            is ResultState.Error -> {
-                scope.launch {
-                    snackbarHostState.showSnackbar("Failed to save note: ${(saveNoteState.value as ResultState.Error).message}")
-                }
-            }
-            else -> { /* Loading or Empty - no action needed */ }
+            onNoteDeleted()
         }
     }
     
-    // Handle delete result
-    LaunchedEffect(key1 = deleteNoteState.value) {
-        when (deleteNoteState.value) {
-            is ResultState.Success -> {
-                scope.launch {
-                    snackbarHostState.showSnackbar("Note deleted successfully")
-                }
-                onNoteDeleted()
+    // Handle errors
+    LaunchedEffect(key1 = uiState.error) {
+        uiState.error?.let { error ->
+            scope.launch {
+                snackbarHostState.showSnackbar(error)
             }
-            is ResultState.Error -> {
-                scope.launch {
-                    snackbarHostState.showSnackbar("Failed to delete note: ${(deleteNoteState.value as ResultState.Error).message}")
-                }
-            }
-            else -> { /* Loading or Empty - no action needed */ }
+            viewModel.clearError()
         }
     }
     
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (noteId > 0) "Edit Note" else "Add Note") },
+                title = { Text(if (uiState.isExistingNote) "Edit Note" else "Add Note") },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    if (noteId > 0) {
-                        IconButton(onClick = { showDeleteConfirmation = true }) {
+                    if (uiState.isExistingNote) {
+                        IconButton(onClick = { viewModel.showDeleteConfirmation(true) }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete Note")
                         }
                     }
@@ -142,9 +120,9 @@ fun NoteDetailScreen(
                 val formattedDate = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
                 viewModel.saveNote(
                     Note(
-                        id = noteId,
-                        title = title,
-                        content = content,
+                        id = uiState.noteId,
+                        title = uiState.title,
+                        content = uiState.content,
                         dateStamp = formattedDate
                     )
                 )
@@ -154,88 +132,84 @@ fun NoteDetailScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
-        when (noteState.value) {
-            is ResultState.Loading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
+        if (uiState.isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
             }
-            is ResultState.Error -> {
-                val errorMessage = (noteState.value as ResultState.Error).message ?: "Unknown error"
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues),
-                    contentAlignment = Alignment.Center
+        } else if (uiState.error != null) {
+            // Show error state only if we don't have a successful note load
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(16.dp)
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        Text(
-                            text = "Error loading note: $errorMessage",
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(onClick = { viewModel.loadNote(noteId) }) {
-                            Text("Retry")
-                        }
+                    Text(
+                        text = "Error loading note: ${uiState.error}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { viewModel.loadNote(noteId) }) {
+                        Text("Retry")
                     }
                 }
             }
-            else -> {
-                // Success or Empty state - show editor
-                Column(
+        } else {
+            // Success or Empty state - show editor
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(16.dp)
+            ) {
+                OutlinedTextField(
+                    value = uiState.title,
+                    onValueChange = { viewModel.updateTitle(it) },
+                    label = { Text("Title") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = uiState.content,
+                    onValueChange = { viewModel.updateContent(it) },
+                    label = { Text("Content") },
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(paddingValues)
-                        .padding(16.dp)
-                ) {
-                    OutlinedTextField(
-                        value = title,
-                        onValueChange = { title = it },
-                        label = { Text("Title") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    OutlinedTextField(
-                        value = content,
-                        onValueChange = { content = it },
-                        label = { Text("Content") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        minLines = 5
-                    )
-                }
+                        .fillMaxWidth()
+                        .weight(1f),
+                    minLines = 5
+                )
             }
         }
     }
     
     // Delete confirmation dialog
-    if (showDeleteConfirmation) {
+    if (uiState.showDeleteConfirmation) {
         AlertDialog(
-            onDismissRequest = { showDeleteConfirmation = false },
+            onDismissRequest = { viewModel.showDeleteConfirmation(false) },
             title = { Text("Delete Note") },
             text = { Text("Are you sure you want to delete this note? This action cannot be undone.") },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.deleteNote(noteId)
-                        showDeleteConfirmation = false
+                        viewModel.deleteNote(uiState.noteId)
+                        viewModel.showDeleteConfirmation(false)
                     }
                 ) {
                     Text("Delete")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirmation = false }) {
+                TextButton(onClick = { viewModel.showDeleteConfirmation(false) }) {
                     Text("Cancel")
                 }
             }
