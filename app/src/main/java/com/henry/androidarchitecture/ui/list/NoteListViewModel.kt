@@ -7,7 +7,11 @@ import com.henry.androidarchitecture.data.repository.NoteRepository
 import com.henry.androidarchitecture.data.repository.ResultState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -17,50 +21,33 @@ class NoteListViewModel @Inject constructor(private val noteRepo: NoteRepository
 
     // UI State
     private val _uiState = MutableStateFlow(NoteListUiState())
-    val uiState = _uiState.asStateFlow()
+    val uiState: StateFlow<NoteListUiState> = noteRepo.getNotesStream()
+        .combine(_uiState) { notesResult, currentState ->
+            when (notesResult) {
+                is ResultState.Success -> currentState.copy(
+                    notes = sortNotes(notesResult.data),
+                    isLoading = false
+                )
+
+                is ResultState.Error -> currentState.copy(
+                    error = notesResult.message,
+                    isLoading = false
+                )
+
+                is ResultState.Loading -> currentState.copy(
+                    isLoading = true
+                )
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Lazily,
+            initialValue = NoteListUiState(isLoading = true)
+        )
 
     // Pagination state
     private val _currentPage = MutableStateFlow(0)
     private val _pageSize = MutableStateFlow(20)
-
-    // All notes from repository
-    private val allNotes = noteRepo.getNotesStream()
-
-    init {
-        viewModelScope.launch {
-            allNotes.collect { resultState ->
-                when (resultState) {
-                    is ResultState.Success -> {
-                        val allNotesList = resultState.data
-                        val endIndex =
-                            minOf((_currentPage.value + 1) * _pageSize.value, allNotesList.size)
-                        _uiState.update { currentState ->
-                            currentState.copy(
-                                notes = allNotesList.take(endIndex),
-                                hasMoreData = endIndex < allNotesList.size,
-                                isLoading = false
-                            )
-                        }
-                    }
-
-                    is ResultState.Error -> {
-                        _uiState.update { currentState ->
-                            currentState.copy(
-                                error = resultState.message,
-                                isLoading = false
-                            )
-                        }
-                    }
-
-                    is ResultState.Loading -> {
-                        _uiState.update { currentState ->
-                            currentState.copy(isLoading = true)
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     fun setSortOrder(order: SortOrder) {
         _uiState.update { it.copy(sortOrder = order, showSortMenu = false) }
